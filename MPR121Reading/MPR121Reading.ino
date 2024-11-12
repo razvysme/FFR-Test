@@ -3,7 +3,7 @@
 Mpr121 mpr121;
 int touch_States[8];
 int previous_States[8] = {0};
-int channels[8] = {0, 1, 2, 3, 8, 9, 10, 11};
+int channels[8] = {0, 1, 2, 3, 8, 9, 10, 11}; //These are the channels i'm using now, could change later
 
 
 void setup()
@@ -37,6 +37,7 @@ void loop() {
   if (valueChanged) {
     for (int i = 0; i < 8; i++) {
       Serial.print(touch_States[i]);
+      if(i<7) Serial.print(",");
     }
   }
   delay(100);
