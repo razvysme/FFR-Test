@@ -1,0 +1,20 @@
+da_40 is our "main" 40-ms da used in, for example, Banai et al., Cerebral Cortex, 2009; Skoe et al., Cerebral Cortex, 2015; Kraus et al., Scientific Reports 2016; Krizman et al., Hearing Research 2019.
+
+Dabase is our "main" 170-ms da that was used in numerous papers, e.g., Anderson et al. PNAS 2013; White-Scwhoch et al. Plos Biol 2015, etc.
+
+2-talker_1M-1F, 6-talker_3M-3F, and 6-talker_2M-4F are babble clips that are looped for studies using background noise. (6-talker was used in White-Scwhoch et al. Plos Biol 2015)
+
+Ba, DaDip, DaHigh, DaShort, Du, Ga, Ta (along with Dabase) were used in
+Chandrasekaran et al. Neuron 2009.
+
+Dabase, Ga and Ba are the trio used in Hornickel et al, PNAS 2009; Ga and Ba were in White-Schwoch & Kraus, Front Hum Neurosci 2013.
+
+BabyCry is from Strait et al. Eur J Neuroscience 2009 
+
+Cello is from Musacchia et al PNAS 2007.
+
+mi1, mi2, mi3 are from Song et al., J Cogn Neurosci 2008.
+
+
+
+All manuscripts can be found at brainvolts.northwestern.edu
