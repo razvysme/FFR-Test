@@ -6,32 +6,51 @@ import random
 import threading
 from jitter_data import generate_normal_values
 from serial_comms import read_serial_data
+from gui import initialize_gui, update_sprites
 
 ################################
 userID = 0
 ################################
 
 # Load METADATA
-with open('Presets\pilot_experiment_debug.JSON', 'r') as json_file:
+with open('Presets/pilot_experiment_debug.JSON', 'r') as json_file:
     metadata = json.load(json_file)
     gap = metadata["gap"]
     repetitions = metadata["repetitions"]
     audio_stimuli = metadata["audio_stimuli"]
     tactile_stimuli = metadata["tactile_stimuli"]
-    output_filename_1 = f"Results\{userID}_{metadata['output_files']['channel_1']}"
-    output_filename_2 = f"Results\{userID}_{metadata['output_files']['channel_2']}"
+    output_filename_1 = f"Results/{userID}_{metadata['output_files']['channel_1']}"
+    output_filename_2 = f"Results/{userID}_{metadata['output_files']['channel_2']}"
     record = metadata["record"]
-      
+
 print(f"Recording: {record}")
 
 # Setup
 fs = 44800  # Sample rate
-chunk = 1024  
+chunk = 1024
 sample_format = pyaudio.paInt16  # 16-bit audio
 channels = 2  # Stereo playback and recording
 comport = "COM7"
 baudrate = 115200
 sensors = [0] * 8  # The 8 capacitive sensors
+sensors_used = [0] * 7  # Used for GUI updates
+
+pinky_finger = 0
+ring_finger = 1
+middle_finger = 2
+index_finger = 3
+thumb = 4
+upper_palm = 5
+lower_palm = 6
+
+# Jitter the gaps and save them for each iteration
+gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
+gap_filename = f"Results/{userID}_gaps.txt"
+
+with open(gap_filename, 'w') as file:
+    file.write(','.join(f"{gap:.2f}" for gap in gap_values))
+
+print(f"Gap values saved in {gap_filename}")
 
 # Open the audio stimuli files
 wf_audio = wave.open(audio_stimuli, 'rb')
@@ -50,115 +69,92 @@ print(f"Experiment length is : {total_recording_length:.2f} seconds")
 
 # Sensors reading callback
 def update_sensors(new_values):
-    global sensors  # Declare the global variable
+    global sensors, sensors_used
     sensors = new_values
-    print(f"Updated sensors array: {sensors}")
+    sensors_used = [sensors[pinky_finger], sensors[ring_finger], sensors[middle_finger],
+                    sensors[index_finger], sensors[thumb], sensors[upper_palm], sensors[lower_palm]]
+    print(f"Updated sensors array: {sensors_used}")
+
+def audio_thread():
+    """Thread for handling audio playback and recording."""
+    p = pyaudio.PyAudio()
+    stream = p.open(format=p.get_format_from_width(wf_audio.getsampwidth()),
+                    channels=2,
+                    rate=wf_audio.getframerate(),
+                    output=True,
+                    input=True,
+                    frames_per_buffer=chunk)
+
+    frames_channel_1 = []
+    frames_channel_2 = []
+
+    print("Playing audio and tactile stimuli, and recording...")
+
+    for rep in range(repetitions):
+        print(f"Repetition {rep + 1} of {repetitions}")
+        wf_audio.rewind()
+        wf_tactile.rewind()
+
+        for _ in range(int(file_length_seconds * fs / chunk)):
+            data_audio = wf_audio.readframes(chunk)
+            data_tactile = wf_tactile.readframes(chunk)
+            stereo_data = np.column_stack((
+                np.frombuffer(data_audio, dtype=np.int16),
+                np.frombuffer(data_tactile, dtype=np.int16)
+            )).flatten()
+
+            stream.write(stereo_data.tobytes())
+
+            recorded_data = np.frombuffer(stream.read(chunk), dtype=np.int16).reshape(-1, 2)
+            frames_channel_1.append(recorded_data[:, 0].tobytes())
+            frames_channel_2.append(recorded_data[:, 1].tobytes())
+
+        gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
+        stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+
+    print("Done playing and recording.")
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+
+    if record:
+        # Save recordings
+        with wave.open(output_filename_1, 'wb') as wf1, wave.open(output_filename_2, 'wb') as wf2:
+            for wf, frames in zip([wf1, wf2], [frames_channel_1, frames_channel_2]):
+                wf.setnchannels(1)
+                wf.setsampwidth(p.get_sample_size(sample_format))
+                wf.setframerate(fs)
+                wf.writeframes(b''.join(frames))
 
 def sensor_thread():
-    """Thread for reading serial data."""
+    """Thread for handling serial communication and updating sensors."""
     read_serial_data(comport, baudrate, callback=update_sensors)
 
-# Start the sensor thread
-sensor_thread = threading.Thread(target=sensor_thread)
-sensor_thread.daemon = True  # Ensures the thread closes when the main program exits
-sensor_thread.start()
+# Main thread: Start GUI
+root, sprite_ids = initialize_gui(sensors_used)
 
-# Jitter the gaps and save them for each iteration
-gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
-gap_filename = f"Results\{userID}_gaps.txt"
+def periodic_update():
+    if root.winfo_exists():  # Only update if the root window exists
+        update_sprites(sensors_used, sprite_ids)
+        root.after(500, periodic_update)
+        
+def on_closing():
+    """Handle cleanup when the window is closed."""
+    print("Exiting application...")
+    # Here you can add cleanup code if needed
+    root.destroy()
 
-# Save gap values to the text file
-with open(gap_filename, 'w') as file:
-    file.write(','.join(f"{gap:.2f}" for gap in gap_values))
+# Attach the cleanup function to the window close event
+root.protocol("WM_DELETE_WINDOW", on_closing)
 
-print(f"Gap values saved in {gap_filename}")
+# Start GUI periodic updates
+periodic_update()
 
-# Initialize PyAudio
-p = pyaudio.PyAudio()
+# Start threads for audio and sensors
+audio_t = threading.Thread(target=audio_thread, daemon=True)
+sensor_t = threading.Thread(target=sensor_thread, daemon=True)
+audio_t.start()
+sensor_t.start()
 
-# Open stream for stereo output and input
-stream = p.open(format=p.get_format_from_width(wf_audio.getsampwidth()),
-                channels=2,  # Stereo output and input
-                rate=wf_audio.getframerate(),
-                output=True,
-                input=True,
-                frames_per_buffer=chunk)
-
-# Prepare for recording
-frames_channel_1 = []
-frames_channel_2 = []
-
-print("Playing audio and tactile stimuli, and recording...")
-
-# Calculate the number of chunks per file
-num_chunks_per_file = int(file_length_seconds * fs / chunk)
-
-# Loop for the required number of repetitions
-for rep in range(repetitions):
-    print(f"Repetition {rep + 1} of {repetitions}")
-    
-    # Reset file pointers for each repetition
-    wf_audio.rewind()
-    wf_tactile.rewind()
-
-    # Play each file completely in chunks
-    for _ in range(num_chunks_per_file):
-        data_audio = wf_audio.readframes(chunk)
-        data_tactile = wf_tactile.readframes(chunk)
-
-        audio_array = np.frombuffer(data_audio, dtype=np.int16)
-        tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
-
-        # Pad with zeros if one file ends early
-        if len(audio_array) < chunk:
-            audio_array = np.pad(audio_array, (0, chunk - len(audio_array)))
-        if len(tactile_array) < chunk:
-            tactile_array = np.pad(tactile_array, (0, chunk - len(tactile_array)))
-
-        # Interleave data for stereo playback
-        stereo_data = np.column_stack((audio_array, tactile_array)).flatten()
-
-        stream.write(stereo_data.tobytes())
-
-        # Record audio
-        recorded_data = stream.read(chunk)
-        recorded_data_array = np.frombuffer(recorded_data, dtype=np.int16).reshape(-1, 2)
-
-        # Separate into two channels
-        channel1_data = recorded_data_array[:, 0]
-        channel2_data = recorded_data_array[:, 1]
-
-        frames_channel_1.append(channel1_data.tobytes())
-        frames_channel_2.append(channel2_data.tobytes())
-
-    # Wait for the gap duration in seconds
-    random_gap = random.choice(gap_values)
-    gap_seconds = random_gap / 1000.0
-    gap_samples = int(gap_seconds * fs * channels)
-    stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
-
-print("Done playing and recording.")
-
-# Stop and close the stream
-stream.stop_stream()
-stream.close()
-p.terminate()
-
-if record:
-    # Save the recorded audio for channel 1
-    wf_output_1 = wave.open(output_filename_1, 'wb')
-    wf_output_1.setnchannels(1)
-    wf_output_1.setsampwidth(p.get_sample_size(sample_format))
-    wf_output_1.setframerate(fs)
-    wf_output_1.writeframes(b''.join(frames_channel_1))
-    wf_output_1.close()
-    print(f"Channel 1 recording saved as {output_filename_1}")
-
-    # Save the recorded audio for channel 2
-    wf_output_2 = wave.open(output_filename_2, 'wb')
-    wf_output_2.setnchannels(1)
-    wf_output_2.setsampwidth(p.get_sample_size(sample_format))
-    wf_output_2.setframerate(fs)
-    wf_output_2.writeframes(b''.join(frames_channel_2))
-    wf_output_2.close()
-    print(f"Channel 2 recording saved as {output_filename_2}")
+# Start Tkinter event loop (main thread)
+root.mainloop()
