@@ -4,12 +4,22 @@ import numpy as np
 import json
 import random
 import threading
+import sys
+import os
 from jitter_data import generate_normal_values
 from serial_comms import read_serial_data
 from gui import initialize_gui, update_sprites
 
 ################################
 userID = 0
+# Check if a user ID argument was passed
+if len(sys.argv) > 1:
+    try:
+        userID = int(sys.argv[1])  # Convert the argument to an integer
+        print(f"User ID set to: {userID}")
+    except ValueError:
+        print("Invalid user ID. Please provide a numeric value.")
+        sys.exit(1)
 ################################
 
 # Load METADATA
@@ -34,23 +44,41 @@ comport = "COM7"
 baudrate = 115200
 sensors = [0] * 8  # The 8 capacitive sensors
 sensors_used = [0] * 7  # Used for GUI updates
+playback_done = threading.Event()
 
-pinky_finger = 0
-ring_finger = 1
-middle_finger = 2
-index_finger = 3
-thumb = 4
-upper_palm = 5
-lower_palm = 6
+
+pinky_finger = 1
+ring_finger = 5
+middle_finger = 3
+index_finger = 6
+thumb = 2
+upper_palm = 0
+lower_palm = 4
 
 # Jitter the gaps and save them for each iteration
 gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
-gap_filename = f"Results/{userID}_gaps.txt"
 
+def get_unique_filename(base_filename):
+    """Check if a file exists and append '!' to the name if it does."""
+    filename, extension = os.path.splitext(base_filename)
+    
+    # Keep appending '!' until the filename is unique
+    while os.path.exists(base_filename):
+        filename += "!"  # Append '!' to the filename
+        base_filename = f"{filename}{extension}"
+    
+    return base_filename
+
+# Create and save the jittered gap length file with unique name - redundancy if i forget to set the name correctly
+gap_filename_temp = f"Results/{userID}_gaps.txt"
+gap_filename = get_unique_filename(gap_filename_temp)
 with open(gap_filename, 'w') as file:
     file.write(','.join(f"{gap:.2f}" for gap in gap_values))
-
 print(f"Gap values saved in {gap_filename}")
+
+# Create a touch log file witch unique name(if i'm silly and forget to set the correct participant name)
+touch_log_filename_temp = f"Results/{userID}_touch_log.txt"
+touch_log_filename = get_unique_filename(touch_log_filename_temp)
 
 # Open the audio stimuli files
 wf_audio = wave.open(audio_stimuli, 'rb')
@@ -102,6 +130,11 @@ def audio_thread():
                 np.frombuffer(data_audio, dtype=np.int16),
                 np.frombuffer(data_tactile, dtype=np.int16)
             )).flatten()
+            
+            # Update and Log sensors_used values before writing to stream
+            update_sensors(sensors)  
+            with open(touch_log_filename, 'a') as log_file:
+                log_file.write(f"{sensors_used}\n")
 
             stream.write(stereo_data.tobytes())
 
@@ -125,6 +158,8 @@ def audio_thread():
                 wf.setsampwidth(p.get_sample_size(sample_format))
                 wf.setframerate(fs)
                 wf.writeframes(b''.join(frames))
+                  
+    playback_done.set()
 
 def sensor_thread():
     """Thread for handling serial communication and updating sensors."""
@@ -134,9 +169,13 @@ def sensor_thread():
 root, sprite_ids = initialize_gui(sensors_used)
 
 def periodic_update():
-    if root.winfo_exists():  # Only update if the root window exists
+    if playback_done.is_set():  # Check if playback is done
+        print("Playback complete. Closing application.")
+        on_closing()  # Close the GUI
+    elif root.winfo_exists():  # Continue updating if window exists
         update_sprites(sensors_used, sprite_ids)
-        root.after(500, periodic_update)
+        root.after(30, periodic_update)
+
         
 def on_closing():
     """Handle cleanup when the window is closed."""

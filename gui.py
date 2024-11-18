@@ -39,7 +39,7 @@ def initialize_gui(sensors):
         "middle": [101, 28],
         "index": [151, 55],
         "thumb": [206, 160],
-        "upper_palm": [128, 175],
+        "upper_palm": [66, 173],
         "lower_palm": [138, 262]
     }
 
@@ -55,6 +55,13 @@ def initialize_gui(sensors):
 
     # Add resizing and drag functionality
     add_resize_and_drag(root, canvas)
+
+    # Ensure the GUI stays on top
+    def keep_on_top():
+        root.attributes('-topmost', True)  # Ensure GUI stays on top
+        root.after(100, keep_on_top)  # Reapply every 100ms
+
+    keep_on_top()  # Start the topmost functionality
 
     return root, sprite_ids
 
