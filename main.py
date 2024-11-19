@@ -37,7 +37,7 @@ with open('Presets/pilot_experiment_debug.JSON', 'r') as json_file:
 print(f"Recording: {record}")
 
 # Setup
-fs = 44800  # Sample rate
+fs = 44100  # Sample rate
 chunk = 1024
 sample_format = pyaudio.paInt16  # 16-bit audio
 channels = 2  # Stereo playback and recording
@@ -46,7 +46,8 @@ baudrate = 115200
 sensors = [0] * 8  # The 8 capacitive sensors
 sensors_used = [0] * 7  # Used for GUI updates
 playback_done = threading.Event()
-tactile_amplitudes = [0, 0.5, 1]
+tactile_amplitudes = [0, 0.5, 1] # 0.5 = approx -6db; for -9db use 0.35
+audio_amplitude = 0.7
 
 pinky_finger = 1
 ring_finger = 5
@@ -59,7 +60,7 @@ lower_palm = 4
 # Jitter the gaps and save them for each iteration
 gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
 
-def get_unique_filename(base_filename):
+def make_unique_filename(base_filename):
     """Check if a file exists and append '!' to the name if it does."""
     filename, extension = os.path.splitext(base_filename)
     
@@ -72,14 +73,14 @@ def get_unique_filename(base_filename):
 
 # Create and save the jittered gap length file with unique name - redundancy if i forget to set the name correctly
 gap_filename_temp = f"Results/{userID}_gaps.txt"
-gap_filename = get_unique_filename(gap_filename_temp)
+gap_filename = make_unique_filename(gap_filename_temp)
 with open(gap_filename, 'w') as file:
     file.write(','.join(f"{gap:.2f}" for gap in gap_values))
 print(f"Gap values saved in {gap_filename}")
 
 # Create a touch log file witch unique name(if i'm silly and forget to set the correct participant name)
 touch_log_filename_temp = f"Results/{userID}_touch_log.txt"
-touch_log_filename = get_unique_filename(touch_log_filename_temp)
+touch_log_filename = make_unique_filename(touch_log_filename_temp)
 
 # Open the audio stimuli files
 wf_audio = wave.open(audio_stimuli, 'rb')
@@ -151,7 +152,8 @@ def audio_thread():
                 audio_array = np.frombuffer(data_audio, dtype=np.int16)
                 tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
 
-                # Scale tactile channel
+                # Scale singals
+                audio_array = (audio_array * audio_amplitude).astype(np.int16)
                 tactile_array = (tactile_array * order[rep]).astype(np.int16)
                 # Combine audio and scaled tactile into stereo        
                 stereo_data = np.column_stack((
