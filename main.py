@@ -27,6 +27,7 @@ with open('Presets/pilot_experiment_debug.JSON', 'r') as json_file:
     metadata = json.load(json_file)
     gap = metadata["gap"]
     repetitions = metadata["repetitions"]
+    batches = metadata["batches"]
     audio_stimuli = metadata["audio_stimuli"]
     tactile_stimuli = metadata["tactile_stimuli"]
     output_filename_1 = f"Results/{userID}_{metadata['output_files']['channel_1']}"
@@ -45,7 +46,7 @@ baudrate = 115200
 sensors = [0] * 8  # The 8 capacitive sensors
 sensors_used = [0] * 7  # Used for GUI updates
 playback_done = threading.Event()
-
+tactile_amplitudes = [0, 0.5, 1]
 
 pinky_finger = 1
 ring_finger = 5
@@ -101,7 +102,22 @@ def update_sensors(new_values):
     sensors = new_values
     sensors_used = [sensors[pinky_finger], sensors[ring_finger], sensors[middle_finger],
                     sensors[index_finger], sensors[thumb], sensors[upper_palm], sensors[lower_palm]]
-    print(f"Updated sensors array: {sensors_used}")
+    # print(f"Updated sensors array: {sensors_used}")
+  
+ # create order of conditions   
+def create_conditions_order(num_reps=repetitions, condition=tactile_amplitudes):
+    reps_per_case = int(num_reps // len(condition))
+    reps_per_case = reps_per_case // 3 #this is some weird hack that makes it work. No idea why if i divide in the line above i get 10
+    #print(reps_per_case)
+    # Randomize the order of condition
+    randomized_condition = random.sample(condition, len(condition))
+    
+    # Create the order list based on the randomized case order
+    order = []
+    for case in randomized_condition:
+        order.extend([case] * reps_per_case)
+    #print(order)
+    return order
 
 def audio_thread():
     """Thread for handling audio playback and recording."""
@@ -118,32 +134,44 @@ def audio_thread():
 
     print("Playing audio and tactile stimuli, and recording...")
 
-    for rep in range(repetitions):
-        print(f"Repetition {rep + 1} of {repetitions}")
-        wf_audio.rewind()
-        wf_tactile.rewind()
+    for i in range(len(tactile_amplitudes)):
+        print(f"Starting batch: {i}")  
+        order = create_conditions_order()
+ 
+        for rep in range(len(order)):
+            #print(f"Repetition {rep + 1} of {len(order)} with amplitude {order[rep]}")
+            wf_audio.rewind()
+            wf_tactile.rewind()
 
-        for _ in range(int(file_length_seconds * fs / chunk)):
-            data_audio = wf_audio.readframes(chunk)
-            data_tactile = wf_tactile.readframes(chunk)
-            stereo_data = np.column_stack((
-                np.frombuffer(data_audio, dtype=np.int16),
-                np.frombuffer(data_tactile, dtype=np.int16)
-            )).flatten()
-            
-            # Update and Log sensors_used values before writing to stream
-            update_sensors(sensors)  
-            with open(touch_log_filename, 'a') as log_file:
-                log_file.write(f"{sensors_used}\n")
+            for _ in range(int(file_length_seconds * fs / chunk)):
+                data_audio = wf_audio.readframes(chunk)
+                data_tactile = wf_tactile.readframes(chunk)
+                
+                # Convert data to NumPy arrays
+                audio_array = np.frombuffer(data_audio, dtype=np.int16)
+                tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
 
-            stream.write(stereo_data.tobytes())
+                # Scale tactile channel
+                tactile_array = (tactile_array * order[rep]).astype(np.int16)
+                # Combine audio and scaled tactile into stereo        
+                stereo_data = np.column_stack((
+                                audio_array,
+                                tactile_array  # Use the scaled tactile_array here
+                            )).flatten()
+                
+                # Update and Log sensors_used values before writing to stream
+                update_sensors(sensors)  
+                with open(touch_log_filename, 'a') as log_file:
+                    log_file.write(f"{sensors_used}\n")
 
-            recorded_data = np.frombuffer(stream.read(chunk), dtype=np.int16).reshape(-1, 2)
-            frames_channel_1.append(recorded_data[:, 0].tobytes())
-            frames_channel_2.append(recorded_data[:, 1].tobytes())
+                stream.write(stereo_data.tobytes())
 
-        gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
-        stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+                recorded_data = np.frombuffer(stream.read(chunk), dtype=np.int16).reshape(-1, 2)
+                frames_channel_1.append(recorded_data[:, 0].tobytes())
+                frames_channel_2.append(recorded_data[:, 1].tobytes())
+
+            gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
+            stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
 
     print("Done playing and recording.")
     stream.stop_stream()
