@@ -61,7 +61,7 @@ lower_palm = 4
 gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
 
 def make_unique_filename(base_filename):
-    """Check if a file exists and append '!' to the name if it does."""
+    #Check if a file exists and append '!' to the name if it does.
     filename, extension = os.path.splitext(base_filename)
     
     # Keep appending '!' until the filename is unique
@@ -143,6 +143,7 @@ def audio_thread():
             #print(f"Repetition {rep + 1} of {len(order)} with amplitude {order[rep]}")
             wf_audio.rewind()
             wf_tactile.rewind()
+            inversion = random.choice([1, -1])
 
             for _ in range(int(file_length_seconds * fs / chunk)):
                 data_audio = wf_audio.readframes(chunk)
@@ -153,8 +154,8 @@ def audio_thread():
                 tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
 
                 # Scale singals
-                audio_array = (audio_array * audio_amplitude).astype(np.int16)
-                tactile_array = (tactile_array * order[rep]).astype(np.int16)
+                audio_array = (audio_array * audio_amplitude * inversion).astype(np.int16)
+                tactile_array = (tactile_array * order[rep] * inversion).astype(np.int16)
                 # Combine audio and scaled tactile into stereo        
                 stereo_data = np.column_stack((
                                 audio_array,
@@ -164,7 +165,7 @@ def audio_thread():
                 # Update and Log sensors_used values before writing to stream
                 update_sensors(sensors)  
                 with open(touch_log_filename, 'a') as log_file:
-                    log_file.write(f"{sensors_used}\n")
+                    log_file.write(f"{sensors_used}, {inversion}\n")
 
                 stream.write(stereo_data.tobytes())
 
