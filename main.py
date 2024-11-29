@@ -23,7 +23,7 @@ if len(sys.argv) > 1:
 ################################
 
 # Load METADATA
-with open('Presets/pilot_experiment_debug.JSON', 'r') as json_file:
+with open('Presets/pilot.JSON', 'r') as json_file:
     metadata = json.load(json_file)
     gap = metadata["gap"]
     repetitions = metadata["repetitions"]
@@ -58,7 +58,7 @@ upper_palm = 0
 lower_palm = 4
 
 # Jitter the gaps and save them for each iteration
-gap_values = generate_normal_values(mean=25, lower_bound=15, upper_bound=35, size=1000)
+gap_values = generate_normal_values(mean=25, lower_bound=20, upper_bound=40, size=1000)
 
 def make_unique_filename(base_filename):
     #Check if a file exists and append '!' to the name if it does.
@@ -165,7 +165,7 @@ def audio_thread():
                 # Update and Log sensors_used values before writing to stream
                 update_sensors(sensors)  
                 with open(touch_log_filename, 'a') as log_file:
-                    log_file.write(f"{sensors_used}, {inversion}\n")
+                    log_file.write(f"{sensors_used}, {tactile_amplitudes}, {inversion}\n")
 
                 stream.write(stereo_data.tobytes())
 
@@ -174,7 +174,9 @@ def audio_thread():
                 frames_channel_2.append(recorded_data[:, 1].tobytes())
 
             gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
-            stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+            #gap_samples = int(gap / 1000.0 * fs * channels)
+            #print("gap:", {gap}, "gap_samples: ", {gap_samples})
+           # stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
 
     print("Done playing and recording.")
     stream.stop_stream()
