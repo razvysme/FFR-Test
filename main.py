@@ -37,7 +37,7 @@ with open('Presets/pilot.JSON', 'r') as json_file:
 print(f"Recording: {record}")
 
 # Setup
-fs = 44100  # Sample rate
+fs = 48000  # Sample rate
 chunk = 1024
 sample_format = pyaudio.paInt16  # 16-bit audio
 channels = 2  # Stereo playback and recording
@@ -153,7 +153,7 @@ def audio_thread():
                 audio_array = np.frombuffer(data_audio, dtype=np.int16)
                 tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
 
-                # Scale singals
+                # Scale signals
                 audio_array = (audio_array * audio_amplitude * inversion).astype(np.int16)
                 tactile_array = (tactile_array * order[rep] * inversion).astype(np.int16)
                 # Combine audio and scaled tactile into stereo        
