@@ -138,17 +138,28 @@ def audio_thread():
     for i in range(len(tactile_amplitudes)):
         print(f"Starting batch: {i}")  
         order = create_conditions_order()
- 
+
         for rep in range(len(order)):
-            #print(f"Repetition {rep + 1} of {len(order)} with amplitude {order[rep]}")
             wf_audio.rewind()
             wf_tactile.rewind()
             inversion = random.choice([1, -1])
 
-            for _ in range(int(file_length_seconds * fs / chunk)):
+            # Initialize frame counters
+            frames_played = 0
+
+            while frames_played < num_frames_audio:
                 data_audio = wf_audio.readframes(chunk)
                 data_tactile = wf_tactile.readframes(chunk)
                 
+                # Handle EOF by padding with zeros
+                if len(data_audio) < chunk * wf_audio.getsampwidth():
+                    padding = chunk * wf_audio.getsampwidth() - len(data_audio)
+                    data_audio += b'\x00' * padding
+
+                if len(data_tactile) < chunk * wf_tactile.getsampwidth():
+                    padding = chunk * wf_tactile.getsampwidth() - len(data_tactile)
+                    data_tactile += b'\x00' * padding
+
                 # Convert data to NumPy arrays
                 audio_array = np.frombuffer(data_audio, dtype=np.int16)
                 tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
@@ -156,27 +167,27 @@ def audio_thread():
                 # Scale signals
                 audio_array = (audio_array * audio_amplitude * inversion).astype(np.int16)
                 tactile_array = (tactile_array * order[rep] * inversion).astype(np.int16)
+
                 # Combine audio and scaled tactile into stereo        
-                stereo_data = np.column_stack((
-                                audio_array,
-                                tactile_array  # Use the scaled tactile_array here
-                            )).flatten()
-                
+                stereo_data = np.column_stack((audio_array, tactile_array)).flatten()
+
                 # Update and Log sensors_used values before writing to stream
-                update_sensors(sensors)  
+                update_sensors(sensors)
                 with open(touch_log_filename, 'a') as log_file:
                     log_file.write(f"{sensors_used}, {tactile_amplitudes}, {inversion}\n")
 
                 stream.write(stereo_data.tobytes())
-
+                
                 recorded_data = np.frombuffer(stream.read(chunk), dtype=np.int16).reshape(-1, 2)
                 frames_channel_1.append(recorded_data[:, 0].tobytes())
                 frames_channel_2.append(recorded_data[:, 1].tobytes())
 
-            gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
+                frames_played += chunk
+
             #gap_samples = int(gap / 1000.0 * fs * channels)
+            gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
             #print("gap:", {gap}, "gap_samples: ", {gap_samples})
-           # stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+            stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
 
     print("Done playing and recording.")
     stream.stop_stream()
@@ -191,6 +202,7 @@ def audio_thread():
                 wf.setsampwidth(p.get_sample_size(sample_format))
                 wf.setframerate(fs)
                 wf.writeframes(b''.join(frames))
+        print("Recordings saved")
                   
     playback_done.set()
 
