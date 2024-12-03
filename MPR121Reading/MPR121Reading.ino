@@ -15,6 +15,7 @@ void setup()
   }
   else
   {
+    mpr121.set_threshold(0x2020);
     Serial.println("mpr121 init OK!");
   }
   delay(100);
