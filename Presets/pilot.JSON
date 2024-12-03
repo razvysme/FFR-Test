@@ -1,11 +1,11 @@
 {
     "audio_stimuli": "Stimuli/FluteStimuli_208Hz_178ms.wav",
-    "tactile_stimuli": "Stimuli/FluteStimuli_208Hz_178ms.wav",
+    "tactile_stimuli": "Stimuli/FluteStimuli_208Hz_178ms_Tact.wav",
     "output_files": {
         "channel_1": "FFR_Stimuli.wav",
         "channel_2": "FFR_Data.wav"
     },
-    "repetitions": 1500,
+    "repetitions": 3000,
     "batches": 3,
     "gap": 25,
     "record": true 
