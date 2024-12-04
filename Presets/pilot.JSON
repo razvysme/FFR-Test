@@ -5,7 +5,7 @@
         "channel_1": "FFR_Stimuli.wav",
         "channel_2": "FFR_Data.wav"
     },
-    "repetitions": 36,
+    "repetitions": 90,
     "batches": 3,
     "gap": 100,
     "record": true 

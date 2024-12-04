@@ -13,7 +13,6 @@ from gui import initialize_gui, update_sprites
 
 start_time = time.time()
 
-################################
 userID = 0
 # Check if a user ID argument was passed
 if len(sys.argv) > 1:
@@ -23,7 +22,6 @@ if len(sys.argv) > 1:
     except ValueError:
         print("Invalid user ID. Please provide a numeric value.")
         sys.exit(1)
-################################
 
 # Load METADATA
 with open('Presets/pilot.JSON', 'r') as json_file:
@@ -36,6 +34,29 @@ with open('Presets/pilot.JSON', 'r') as json_file:
     output_filename_1 = f"Results/{userID}_{metadata['output_files']['channel_1']}"
     output_filename_2 = f"Results/{userID}_{metadata['output_files']['channel_2']}"
     record = metadata["record"]
+
+# Setup
+input_device_index = 26  # Index 26 for "Input 1/2 (6- Steinberg UR44C)"
+output_device_index = 22  # Index 22 for "Voice (6- Steinberg UR44C)"
+fs = 48000 
+chunk = 1024
+sample_format = pyaudio.paInt16
+channels = 2  
+comport = "COM7"
+baudrate = 115200
+sensors = [0] * 8  # The 8 capacitive sensors
+sensors_used = [0] * 7  # Used for GUI updates
+playback_done = threading.Event()
+tactile_amplitudes = [0, 0.5, 1] # 0.5 = approx -6db; for -9db use 0.35
+audio_amplitude = 0.8
+
+pinky_finger = 1
+ring_finger = 5
+middle_finger = 3
+index_finger = 6
+thumb = 2
+upper_palm = 0
+lower_palm = 4
 
 #Audio interface settings
 def list_audio_interfaces():
@@ -52,33 +73,7 @@ def list_audio_interfaces():
         print("-" * 30)
     p.terminate()
 
-if __name__ == "__main__":
-    list_audio_interfaces()
-
-print(f"Recording: {record}")
-
-# Setup
-input_device_index = 26  # Index 26 for "Input 1/2 (6- Steinberg UR44C)"
-output_device_index = 22  # Index 22 for "Voice (6- Steinberg UR44C)"
-fs = 48000  # Sample rate
-chunk = 1024
-sample_format = pyaudio.paInt16  # 16-bit audio
-channels = 2  # Stereo playback and recording
-comport = "COM7"
-baudrate = 115200
-sensors = [0] * 8  # The 8 capacitive sensors
-sensors_used = [0] * 7  # Used for GUI updates
-playback_done = threading.Event()
-tactile_amplitudes = [0, 0.5, 1] # 0.5 = approx -6db; for -9db use 0.35
-audio_amplitude = 0.8
-
-pinky_finger = 1
-ring_finger = 5
-middle_finger = 3
-index_finger = 6
-thumb = 2
-upper_palm = 0
-lower_palm = 4
+#list_audio_interfaces()
 
 # Jitter the gaps and save them for each iteration
 gap_values = generate_normal_values(mean=25, lower_bound=20, upper_bound=40, size=1000)
@@ -105,11 +100,9 @@ print(f"Gap values saved in {gap_filename}")
 touch_log_filename_temp = f"Results/{userID}_touch_log.txt"
 touch_log_filename = make_unique_filename(touch_log_filename_temp)
 
-# Open the audio stimuli files
 wf_audio = wave.open(audio_stimuli, 'rb')
 wf_tactile = wave.open(tactile_stimuli, 'rb')
 
-# Ensure both files have the same sample rate
 if wf_audio.getframerate() != wf_tactile.getframerate():
     raise ValueError("Sample rates of the two files must match!")
 
@@ -118,7 +111,7 @@ num_frames_audio = wf_audio.getnframes()
 file_length_seconds = num_frames_audio / wf_audio.getframerate()
 gap_seconds = gap / 1000.0  # Convert gap from ms to seconds
 total_recording_length = repetitions * (file_length_seconds + gap_seconds)
-print(f"Experiment length is : {total_recording_length:.2f} seconds")
+#print(f"Experiment length is : {total_recording_length:.2f} seconds")
 
 # Sensors reading callback
 def update_sensors(new_values):
@@ -143,11 +136,12 @@ def create_conditions_order(num_reps=repetitions, condition=tactile_amplitudes):
     #print(order)
     return order
 
+print(f"Recording: {record}")
+
 def audio_thread():
     """Thread for handling audio playback and recording."""
     p = pyaudio.PyAudio()
 
-    # Open input stream for recording
     input_stream = p.open(
         format=pyaudio.paInt16,
         channels=2,
@@ -157,7 +151,6 @@ def audio_thread():
         frames_per_buffer=chunk
     )
 
-    # Open output stream for playback
     output_stream = p.open(
         format=pyaudio.paInt16,
         channels=2,
@@ -170,7 +163,7 @@ def audio_thread():
     frames_channel_1 = []
     frames_channel_2 = []
 
-    print("Playing audio and tactile stimuli, and recording...")
+    print("Playing audio and tactile stimuli, recording...")
 
     for i in range(len(tactile_amplitudes)):
         print(f"Starting batch: {i}")  
@@ -180,15 +173,13 @@ def audio_thread():
             wf_audio.rewind()
             wf_tactile.rewind()
             inversion = random.choice([1, -1])
-
-            # Initialize frame counters
             frames_played = 0
 
             while frames_played < num_frames_audio:
                 data_audio = wf_audio.readframes(chunk)
                 data_tactile = wf_tactile.readframes(chunk)
                 
-                # Handle EOF by padding with zeros
+                # Handle ends by zero padding
                 if len(data_audio) < chunk * wf_audio.getsampwidth():
                     padding = chunk * wf_audio.getsampwidth() - len(data_audio)
                     data_audio += b'\x00' * padding
@@ -201,7 +192,6 @@ def audio_thread():
                 audio_array = np.frombuffer(data_audio, dtype=np.int16)
                 tactile_array = np.frombuffer(data_tactile, dtype=np.int16)
 
-                # Scale signals
                 audio_array = (audio_array * audio_amplitude * inversion).astype(np.int16)
                 tactile_array = (tactile_array * order[rep] * inversion).astype(np.int16)
 
@@ -209,7 +199,6 @@ def audio_thread():
                 stereo_data = np.empty((audio_array.size + tactile_array.size,), dtype=np.int16)
                 stereo_data[0::2] = audio_array  # Left channel
                 stereo_data[1::2] = tactile_array  # Right channel
-
 
                 update_sensors(sensors)
                 with open(touch_log_filename, 'a') as log_file:
@@ -221,15 +210,12 @@ def audio_thread():
                 frames_channel_2.append(recorded_data[:, 1].tobytes())
             
                 frames_played += chunk
-                #print(f"Write Time: {write_time - start_time:.5f}, Read Time: {read_time - write_time:.5f}")
-                
+            
+            #Gap processing     
             gap_samples = int(gap / 1000.0 * fs * channels)
             #gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
             output_stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
-            # Record the silence during the gap
             recorded_silence = np.frombuffer(input_stream.read(int(gap_samples / channels)), dtype=np.int16).reshape(-1, 2)
-
-            # Append the recorded silence to the recorded frames
             frames_channel_1.append(recorded_silence[:, 0].tobytes())
             frames_channel_2.append(recorded_silence[:, 1].tobytes())
 
@@ -242,7 +228,6 @@ def audio_thread():
     p.terminate()
     
     if record:
-    # Save recordings
         with wave.open(output_filename_1, 'wb') as wf1, wave.open(output_filename_2, 'wb') as wf2:
             for wf, frames in zip([wf1, wf2], [frames_channel_1, frames_channel_2]):
                 wf.setnchannels(1)
@@ -252,7 +237,6 @@ def audio_thread():
     print("Recordings saved")             
     playback_done.set()
 
-#gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
 def sensor_thread():
     """Thread for handling serial communication and updating sensors."""
     read_serial_data(comport, baudrate, callback=update_sensors)
@@ -268,7 +252,6 @@ def periodic_update():
         update_sprites(sensors_used, sprite_ids)
         root.after(30, periodic_update)
 
-        
 def on_closing():
     """Handle cleanup when the window is closed."""
     print("Exiting application...")
@@ -287,5 +270,4 @@ sensor_t = threading.Thread(target=sensor_thread, daemon=True)
 audio_t.start()
 sensor_t.start()
 
-# Start Tkinter event loop (main thread)
 root.mainloop()
