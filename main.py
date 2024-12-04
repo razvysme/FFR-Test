@@ -1,3 +1,4 @@
+import time
 import pyaudio
 import wave
 import numpy as np
@@ -9,6 +10,8 @@ import os
 from jitter_data import generate_normal_values
 from serial_comms import read_serial_data
 from gui import initialize_gui, update_sprites
+
+start_time = time.time()
 
 ################################
 userID = 0
@@ -34,9 +37,29 @@ with open('Presets/pilot.JSON', 'r') as json_file:
     output_filename_2 = f"Results/{userID}_{metadata['output_files']['channel_2']}"
     record = metadata["record"]
 
+#Audio interface settings
+def list_audio_interfaces():
+    """List all connected audio interfaces."""
+    p = pyaudio.PyAudio()
+    print("Available audio interfaces:")
+    for i in range(p.get_device_count()):
+        info = p.get_device_info_by_index(i)
+        print(f"Index: {i}")
+        print(f"  Name: {info['name']}")
+        print(f"  Max Input Channels: {info['maxInputChannels']}")
+        print(f"  Max Output Channels: {info['maxOutputChannels']}")
+        print(f"  Default Sample Rate: {info['defaultSampleRate']}")
+        print("-" * 30)
+    p.terminate()
+
+if __name__ == "__main__":
+    list_audio_interfaces()
+
 print(f"Recording: {record}")
 
 # Setup
+input_device_index = 26  # Index 26 for "Input 1/2 (6- Steinberg UR44C)"
+output_device_index = 22  # Index 22 for "Voice (6- Steinberg UR44C)"
 fs = 48000  # Sample rate
 chunk = 1024
 sample_format = pyaudio.paInt16  # 16-bit audio
@@ -47,7 +70,7 @@ sensors = [0] * 8  # The 8 capacitive sensors
 sensors_used = [0] * 7  # Used for GUI updates
 playback_done = threading.Event()
 tactile_amplitudes = [0, 0.5, 1] # 0.5 = approx -6db; for -9db use 0.35
-audio_amplitude = 0.7
+audio_amplitude = 0.8
 
 pinky_finger = 1
 ring_finger = 5
@@ -123,12 +146,26 @@ def create_conditions_order(num_reps=repetitions, condition=tactile_amplitudes):
 def audio_thread():
     """Thread for handling audio playback and recording."""
     p = pyaudio.PyAudio()
-    stream = p.open(format=p.get_format_from_width(wf_audio.getsampwidth()),
-                    channels=2,
-                    rate=wf_audio.getframerate(),
-                    output=True,
-                    input=True,
-                    frames_per_buffer=chunk)
+
+    # Open input stream for recording
+    input_stream = p.open(
+        format=pyaudio.paInt16,
+        channels=2,
+        rate=fs,
+        input=True,
+        input_device_index=input_device_index,
+        frames_per_buffer=chunk
+    )
+
+    # Open output stream for playback
+    output_stream = p.open(
+        format=pyaudio.paInt16,
+        channels=2,
+        rate=fs,
+        output=True,
+        output_device_index=output_device_index,
+        frames_per_buffer=chunk
+    )
 
     frames_channel_1 = []
     frames_channel_2 = []
@@ -168,44 +205,62 @@ def audio_thread():
                 audio_array = (audio_array * audio_amplitude * inversion).astype(np.int16)
                 tactile_array = (tactile_array * order[rep] * inversion).astype(np.int16)
 
-                # Combine audio and scaled tactile into stereo        
-                stereo_data = np.column_stack((audio_array, tactile_array)).flatten()
+                # Combine audio and scaled tactile into stereo
+                stereo_data = np.empty((audio_array.size + tactile_array.size,), dtype=np.int16)
+                stereo_data[0::2] = audio_array  # Left channel
+                stereo_data[1::2] = tactile_array  # Right channel
 
                 # Update and Log sensors_used values before writing to stream
                 update_sensors(sensors)
                 with open(touch_log_filename, 'a') as log_file:
                     log_file.write(f"{sensors_used}, {tactile_amplitudes}, {inversion}\n")
 
-                stream.write(stereo_data.tobytes())
+                # Write to output stream and read from input stream
+                #write_time = time.time()
                 
-                recorded_data = np.frombuffer(stream.read(chunk), dtype=np.int16).reshape(-1, 2)
+                output_stream.write(stereo_data.tobytes())
+                recorded_data = np.frombuffer(input_stream.read(chunk), dtype=np.int16).reshape(-1, 2)
+                #read_time = time.time()
+                
                 frames_channel_1.append(recorded_data[:, 0].tobytes())
                 frames_channel_2.append(recorded_data[:, 1].tobytes())
-
+                
+                '''
+                # Sleep to maintain sync
+                elapsed = write_time - start_time
+                sleep_time = max(0, (chunk / fs) - elapsed)
+                time.sleep(sleep_time)
+                '''
                 frames_played += chunk
-
+                #print(f"Write Time: {write_time - start_time:.5f}, Read Time: {read_time - write_time:.5f}")
+                
             #gap_samples = int(gap / 1000.0 * fs * channels)
-            gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
-            #print("gap:", {gap}, "gap_samples: ", {gap_samples})
-            stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+            #gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
+            #output_stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+            #write_time = time.time()
+            
 
     print("Done playing and recording.")
-    stream.stop_stream()
-    stream.close()
+    
+    # Close streams
+    input_stream.stop_stream()
+    input_stream.close()
+    output_stream.stop_stream()
+    output_stream.close()
     p.terminate()
-
+    
     if record:
-        # Save recordings
+    # Save recordings
         with wave.open(output_filename_1, 'wb') as wf1, wave.open(output_filename_2, 'wb') as wf2:
             for wf, frames in zip([wf1, wf2], [frames_channel_1, frames_channel_2]):
                 wf.setnchannels(1)
                 wf.setsampwidth(p.get_sample_size(sample_format))
                 wf.setframerate(fs)
                 wf.writeframes(b''.join(frames))
-        print("Recordings saved")
-                  
+    print("Recordings saved")             
     playback_done.set()
 
+#gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
 def sensor_thread():
     """Thread for handling serial communication and updating sensors."""
     read_serial_data(comport, baudrate, callback=update_sensors)
