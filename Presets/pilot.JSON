@@ -7,6 +7,6 @@
     },
     "repetitions": 36,
     "batches": 3,
-    "gap": 25,
+    "gap": 100,
     "record": true 
 }

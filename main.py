@@ -210,39 +210,31 @@ def audio_thread():
                 stereo_data[0::2] = audio_array  # Left channel
                 stereo_data[1::2] = tactile_array  # Right channel
 
-                # Update and Log sensors_used values before writing to stream
+
                 update_sensors(sensors)
                 with open(touch_log_filename, 'a') as log_file:
                     log_file.write(f"{sensors_used}, {tactile_amplitudes}, {inversion}\n")
-
-                # Write to output stream and read from input stream
-                #write_time = time.time()
-                
                 output_stream.write(stereo_data.tobytes())
-                recorded_data = np.frombuffer(input_stream.read(chunk), dtype=np.int16).reshape(-1, 2)
-                #read_time = time.time()
                 
+                recorded_data = np.frombuffer(input_stream.read(chunk), dtype=np.int16).reshape(-1, 2)
                 frames_channel_1.append(recorded_data[:, 0].tobytes())
                 frames_channel_2.append(recorded_data[:, 1].tobytes())
-                
-                '''
-                # Sleep to maintain sync
-                elapsed = write_time - start_time
-                sleep_time = max(0, (chunk / fs) - elapsed)
-                time.sleep(sleep_time)
-                '''
+            
                 frames_played += chunk
                 #print(f"Write Time: {write_time - start_time:.5f}, Read Time: {read_time - write_time:.5f}")
                 
-            #gap_samples = int(gap / 1000.0 * fs * channels)
+            gap_samples = int(gap / 1000.0 * fs * channels)
             #gap_samples = int((random.choice(gap_values) / 1000.0) * fs * channels)
-            #output_stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
-            #write_time = time.time()
-            
+            output_stream.write(np.zeros(gap_samples, dtype=np.int16).tobytes())
+            # Record the silence during the gap
+            recorded_silence = np.frombuffer(input_stream.read(int(gap_samples / channels)), dtype=np.int16).reshape(-1, 2)
+
+            # Append the recorded silence to the recorded frames
+            frames_channel_1.append(recorded_silence[:, 0].tobytes())
+            frames_channel_2.append(recorded_silence[:, 1].tobytes())
 
     print("Done playing and recording.")
     
-    # Close streams
     input_stream.stop_stream()
     input_stream.close()
     output_stream.stop_stream()
