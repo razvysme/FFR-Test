@@ -24,7 +24,7 @@ if len(sys.argv) > 1:
         sys.exit(1)
 
 # Load METADATA
-with open('Presets/pilot.JSON', 'r') as json_file:
+with open('Presets/Experiment.JSON', 'r') as json_file:
     metadata = json.load(json_file)
     gap = metadata["gap"]
     repetitions = metadata["repetitions"]
@@ -38,7 +38,7 @@ with open('Presets/pilot.JSON', 'r') as json_file:
 # Setup
 input_device_index = 26  # Index 26 for "Input 1/2 (6- Steinberg UR44C)"
 output_device_index = 22  # Index 22 for "Voice (6- Steinberg UR44C)"
-fs = 48000 
+fs = 44100 
 chunk = 1024
 sample_format = pyaudio.paInt16
 channels = 2  
